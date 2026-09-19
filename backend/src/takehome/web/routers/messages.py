@@ -6,7 +6,7 @@ from datetime import datetime
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -64,7 +64,7 @@ def _message_out(message: Message, citations: list[Citation]) -> MessageOut:
 
 
 class MessageCreate(BaseModel):
-    content: str
+    content: str = Field(min_length=1)
 
 
 # --------------------------------------------------------------------------- #
