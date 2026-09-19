@@ -3,12 +3,17 @@ import { Bot } from "lucide-react";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import type { Message } from "../types";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 interface MessageBubbleProps {
 	message: Message;
+	onCitationClick: (page: number) => void;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({
+	message,
+	onCitationClick,
+}: MessageBubbleProps) {
 	if (message.role === "system") {
 		return (
 			<motion.div
@@ -54,11 +59,32 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 				<div className="prose">
 					<Streamdown>{message.content}</Streamdown>
 				</div>
-				{message.sources_cited > 0 && (
-					<p className="mt-1.5 text-xs text-neutral-400">
-						{message.sources_cited} source
-						{message.sources_cited !== 1 ? "s" : ""} cited
-					</p>
+				{message.citations.length > 0 && (
+					<div className="mt-1.5 flex flex-wrap gap-1.5">
+						{message.citations.map((citation) => {
+							const quote = citation.cited_text.replace(/\s+/g, " ").trim();
+							return (
+								<Tooltip key={citation.id}>
+									<TooltipTrigger asChild>
+										<button
+											type="button"
+											className="rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-100"
+											onClick={() => {
+												if (citation.page_number)
+													onCitationClick(citation.page_number);
+											}}
+										>
+											[{citation.ordinal}] p.{citation.page_number}{" "}
+											{quote.length > 60 ? `${quote.slice(0, 60)}…` : quote}
+										</button>
+									</TooltipTrigger>
+									<TooltipContent className="max-h-72 max-w-md overflow-y-auto border border-neutral-200 bg-white py-2 text-neutral-700 shadow-md">
+										<Quote text={citation.cited_text} />
+									</TooltipContent>
+								</Tooltip>
+							);
+						})}
+					</div>
 				)}
 			</div>
 		</motion.div>
@@ -96,5 +122,27 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
 				<span className="inline-block h-4 w-0.5 animate-pulse bg-neutral-400" />
 			</div>
 		</div>
+	);
+}
+
+// A cited passage, one line per clause as the server split it, with its number or defined term in bold
+function Quote({ text }: { text: string }) {
+	return (
+		<>
+			{text
+				.trim()
+				.split("\n")
+				.map((line, i) => {
+					const head = line.startsWith('"')
+						? line.slice(0, line.indexOf('"', 1) + 1)
+						: (line.split(" ")[0] ?? "");
+					return (
+						<p key={line} className={i > 0 ? "mt-2" : ""}>
+							{/^[\d("]/.test(head) ? <strong>{head}</strong> : head}
+							{line.slice(head.length)}
+						</p>
+					);
+				})}
+		</>
 	);
 }

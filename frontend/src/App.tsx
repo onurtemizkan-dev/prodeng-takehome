@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ChatSidebar } from "./components/ChatSidebar";
 import { ChatWindow } from "./components/ChatWindow";
 import { DocumentViewer } from "./components/DocumentViewer";
@@ -32,6 +32,13 @@ export default function App() {
 		upload,
 		refresh: refreshDocument,
 	} = useDocument(selectedId);
+
+	const [page, setPage] = useState(1);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: a new conversation starts on its first page
+	useEffect(() => {
+		setPage(1);
+	}, [selectedId]);
 
 	const handleSend = useCallback(
 		async (content: string) => {
@@ -78,9 +85,14 @@ export default function App() {
 					conversationId={selectedId}
 					onSend={handleSend}
 					onUpload={handleUpload}
+					onCitationClick={setPage}
 				/>
 
-				<DocumentViewer document={document} />
+				<DocumentViewer
+					document={document}
+					page={page}
+					onPageChange={setPage}
+				/>
 			</div>
 		</TooltipProvider>
 	);
