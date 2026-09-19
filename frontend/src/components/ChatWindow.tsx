@@ -1,6 +1,6 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useRef } from "react";
-import type { Message } from "../types";
+import type { Citation, Message } from "../types";
 import { ChatInput } from "./ChatInput";
 import { EmptyState } from "./EmptyState";
 import { MessageBubble, StreamingBubble } from "./MessageBubble";
@@ -15,7 +15,8 @@ interface ChatWindowProps {
 	conversationId: string | null;
 	onSend: (content: string) => void;
 	onUpload: (file: File) => void;
-	onCitationClick: (page: number) => void;
+	onCitationClick: (citation: Citation) => void;
+	activeCitationId: string | null;
 }
 
 export function ChatWindow({
@@ -29,6 +30,7 @@ export function ChatWindow({
 	onSend,
 	onUpload,
 	onCitationClick,
+	activeCitationId,
 }: ChatWindowProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -103,6 +105,7 @@ export function ChatWindow({
 							key={message.id}
 							message={message}
 							onCitationClick={onCitationClick}
+							activeCitationId={activeCitationId}
 						/>
 					))}
 					{streaming && <StreamingBubble content={streamingContent} />}

@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, FileText, Loader2 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Document as PDFDocument, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -19,12 +19,14 @@ const DEFAULT_WIDTH = 400;
 interface DocumentViewerProps {
 	document: Document | null;
 	page: number;
+	highlight: string;
 	onPageChange: (page: number) => void;
 }
 
 export function DocumentViewer({
 	document,
 	page,
+	highlight,
 	onPageChange,
 }: DocumentViewerProps) {
 	const [numPages, setNumPages] = useState<number>(0);
@@ -64,6 +66,22 @@ export function DocumentViewer({
 	);
 
 	const pdfPageWidth = width - 48; // account for px-4 padding on each side
+
+	// The page's text layer items, and which of them are part of the cited passage
+	const [items, setItems] = useState<string[]>([]);
+	const marked = useMemo(
+		() => markedItems(items, highlight),
+		[items, highlight],
+	);
+	const renderText = useCallback(
+		({ str, itemIndex }: { str: string; itemIndex: number }) => {
+			const text = escapeHtml(str); // the renderer's output is HTML
+			return marked.has(itemIndex)
+				? `<mark class="bg-yellow-300/50 text-transparent">${text}</mark>`
+				: text;
+		},
+		[marked],
+	);
 
 	if (!document) {
 		return (
@@ -134,6 +152,10 @@ export function DocumentViewer({
 						<Page
 							pageNumber={page}
 							width={pdfPageWidth}
+							customTextRenderer={renderText}
+							onGetTextSuccess={({ items }) =>
+								setItems(items.map((item) => ("str" in item ? item.str : "")))
+							}
 							loading={
 								<div className="flex items-center justify-center py-12">
 									<Loader2 className="h-5 w-5 animate-spin text-neutral-300" />
@@ -171,5 +193,36 @@ export function DocumentViewer({
 				</div>
 			)}
 		</div>
+	);
+}
+
+// Indexes of the text layer items that overlap a block of the cited passage. Both sides are
+// reduced to letters and digits first, so hyphenation and where pdf.js splits the text don't matter.
+function markedItems(items: string[], passage: string): Set<number> {
+	const lengths = items.map((item) => squeeze(item).length);
+	const pageText = items.map(squeeze).join("");
+	const marked = new Set<number>();
+	for (const block of passage.split("\n").map(squeeze)) {
+		const from = block ? pageText.indexOf(block) : -1;
+		if (from < 0) continue;
+		const to = from + block.length;
+		let start = 0;
+		for (let index = 0; index < lengths.length; index++) {
+			const end = start + (lengths[index] ?? 0);
+			if (start < to && end > from) marked.add(index);
+			start = end;
+		}
+	}
+	return marked;
+}
+
+function squeeze(text: string) {
+	return text.normalize("NFKC").replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function escapeHtml(text: string) {
+	return text.replace(
+		/[&<>]/g,
+		(c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] ?? c,
 	);
 }

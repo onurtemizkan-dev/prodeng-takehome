@@ -2,17 +2,19 @@ import { motion } from "framer-motion";
 import { Bot } from "lucide-react";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
-import type { Message } from "../types";
+import type { Citation, Message } from "../types";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 interface MessageBubbleProps {
 	message: Message;
-	onCitationClick: (page: number) => void;
+	onCitationClick: (citation: Citation) => void;
+	activeCitationId: string | null;
 }
 
 export function MessageBubble({
 	message,
 	onCitationClick,
+	activeCitationId,
 }: MessageBubbleProps) {
 	if (message.role === "system") {
 		return (
@@ -68,11 +70,12 @@ export function MessageBubble({
 									<TooltipTrigger asChild>
 										<button
 											type="button"
-											className="rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-100"
-											onClick={() => {
-												if (citation.page_number)
-													onCitationClick(citation.page_number);
-											}}
+											className={`rounded-md border px-2 py-0.5 text-xs text-neutral-600 ${
+												citation.id === activeCitationId
+													? "border-neutral-400 bg-neutral-200"
+													: "border-neutral-200 bg-neutral-50 hover:bg-neutral-100"
+											}`}
+											onClick={() => onCitationClick(citation)}
 										>
 											[{citation.ordinal}] p.{citation.page_number}{" "}
 											{quote.length > 60 ? `${quote.slice(0, 60)}…` : quote}

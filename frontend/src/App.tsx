@@ -6,6 +6,7 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { useConversations } from "./hooks/use-conversations";
 import { useDocument } from "./hooks/use-document";
 import { useMessages } from "./hooks/use-messages";
+import type { Citation } from "./types";
 
 export default function App() {
 	const {
@@ -34,11 +35,18 @@ export default function App() {
 	} = useDocument(selectedId);
 
 	const [page, setPage] = useState(1);
+	const [active, setActive] = useState<Citation | null>(null);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: a new conversation starts on its first page
 	useEffect(() => {
 		setPage(1);
+		setActive(null);
 	}, [selectedId]);
+
+	const handleCitationClick = useCallback((citation: Citation) => {
+		if (citation.page_number) setPage(citation.page_number);
+		setActive(citation);
+	}, []);
 
 	const handleSend = useCallback(
 		async (content: string) => {
@@ -85,12 +93,14 @@ export default function App() {
 					conversationId={selectedId}
 					onSend={handleSend}
 					onUpload={handleUpload}
-					onCitationClick={setPage}
+					onCitationClick={handleCitationClick}
+					activeCitationId={active?.id ?? null}
 				/>
 
 				<DocumentViewer
 					document={document}
 					page={page}
+					highlight={active?.cited_text ?? ""}
 					onPageChange={setPage}
 				/>
 			</div>
