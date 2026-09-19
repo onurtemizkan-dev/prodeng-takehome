@@ -114,10 +114,23 @@ async def chat_with_document(
             seen.add(span)
             start = blocks[c.start_block_index][0]
             last_offset, last_text = blocks[c.end_block_index - 1]
+            page = page_for_offset(boundaries, start)
+            # A block starting with a lowercase letter, on the page after a passage that stopped
+            # mid-sentence, is the rest of that passage cut by the page break, not one of its own
+            if (
+                citations
+                and page is not None
+                and c.cited_text[:1].islower()
+                and not citations[-1].cited_text.rstrip().endswith((".", ";", ":"))
+                and page_for_offset(boundaries, citations[-1].end_char - 1) == page - 1
+            ):
+                citations[-1].end_char = last_offset + len(last_text)
+                citations[-1].cited_text += c.cited_text
+                continue
             citations.append(
                 Citation(
                     ordinal=len(citations) + 1,
-                    page_number=page_for_offset(boundaries, start),
+                    page_number=page,
                     start_char=start,
                     end_char=last_offset + len(last_text),
                     cited_text=c.cited_text,

@@ -135,6 +135,13 @@ function Quote({ text }: { text: string }) {
 			{text
 				.trim()
 				.split("\n")
+				.reduce<string[]>((lines, line) => {
+					// A line starting with a lowercase letter continues the previous one across a page break
+					if (lines.length && /^[a-z]/.test(line))
+						lines[lines.length - 1] += ` ${line}`;
+					else lines.push(line);
+					return lines;
+				}, [])
 				.map((line, i) => {
 					const head = line.startsWith('"')
 						? line.slice(0, line.indexOf('"', 1) + 1)
