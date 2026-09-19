@@ -12,7 +12,9 @@ from takehome.db.models import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # fileConfig disables every logger it doesn't list by default, and this runs inside the app's
+    # lifespan, so without this uvicorn's error and access loggers go quiet on startup.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
