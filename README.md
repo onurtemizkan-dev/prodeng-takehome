@@ -48,6 +48,15 @@ edit files normally on your machine and changes hot-reload automatically.
 
 We've included sample legal documents in `sample-docs/` for testing.
 
+### Try it
+
+1. Create a chat and upload `sample-docs/commercial-lease-100-bishopsgate.pdf`.
+2. Ask: "What conditions must the tenant satisfy to exercise the break?"
+3. Click the first chip under the answer. The viewer jumps to page 7 and highlights the clause it cites. Hover the chip for the full passage.
+4. Ask: "What does Section 14 say about dilapidations?" There is no Section 14, so no chips.
+
+Design notes and known issues are in `DECISIONS.md`.
+
 ### Project Structure
 
 - `frontend/` — React frontend (Vite + Tailwind + shadcn/Radix UI)
@@ -61,6 +70,7 @@ We've included sample legal documents in `sample-docs/` for testing.
 - `just stop` — Stop all services
 - `just reset` — Stop everything and clear database
 - `just check` — Run all linters and type checks
+- `just test` — Run backend tests
 - `just fmt` — Format all code
 - `just db-init` — Run database migrations
 - `just db-shell` — Open a psql shell
