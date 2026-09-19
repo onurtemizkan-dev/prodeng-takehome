@@ -9,9 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from starlette.responses import StreamingResponse
 
-from takehome.db.models import Message
+from takehome.db.models import Citation, Message
 from takehome.db.session import get_session
 from takehome.services.conversation import get_conversation, update_conversation
 from takehome.services.document import get_document_for_conversation
@@ -27,6 +28,17 @@ router = APIRouter(tags=["messages"])
 # --------------------------------------------------------------------------- #
 
 
+class CitationOut(BaseModel):
+    id: str
+    ordinal: int
+    page_number: int | None
+    start_char: int
+    end_char: int
+    cited_text: str
+
+    model_config = {"from_attributes": True}
+
+
 class MessageOut(BaseModel):
     id: str
     conversation_id: str
@@ -34,8 +46,21 @@ class MessageOut(BaseModel):
     content: str
     sources_cited: int
     created_at: datetime
+    citations: list[CitationOut] = []
 
     model_config = {"from_attributes": True}
+
+
+def _message_out(message: Message, citations: list[Citation]) -> MessageOut:
+    return MessageOut(
+        id=message.id,
+        conversation_id=message.conversation_id,
+        role=message.role,
+        content=message.content,
+        sources_cited=message.sources_cited,
+        created_at=message.created_at,
+        citations=[CitationOut.model_validate(c) for c in citations],
+    )
 
 
 class MessageCreate(BaseModel):
@@ -63,23 +88,14 @@ async def list_messages(
 
     stmt = (
         select(Message)
+        .options(selectinload(Message.citations))
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at.asc())
     )
     result = await session.execute(stmt)
     messages = list(result.scalars().all())
 
-    return [
-        MessageOut(
-            id=m.id,
-            conversation_id=m.conversation_id,
-            role=m.role,
-            content=m.content,
-            sources_cited=m.sources_cited,
-            created_at=m.created_at,
-        )
-        for m in messages
-    ]
+    return [_message_out(m, m.citations) for m in messages]
 
 
 @router.post("/api/conversations/{conversation_id}/messages")
@@ -190,14 +206,7 @@ async def send_message(
             message_data = json.dumps(
                 {
                     "type": "message",
-                    "message": {
-                        "id": assistant_message.id,
-                        "conversation_id": assistant_message.conversation_id,
-                        "role": assistant_message.role,
-                        "content": assistant_message.content,
-                        "sources_cited": assistant_message.sources_cited,
-                        "created_at": assistant_message.created_at.isoformat(),
-                    },
+                    "message": _message_out(assistant_message, []).model_dump(mode="json"),
                 }
             )
             yield f"data: {message_data}\n\n"

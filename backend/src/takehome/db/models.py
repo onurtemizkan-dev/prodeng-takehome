@@ -46,6 +46,27 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+    citations: Mapped[list[Citation]] = relationship(
+        back_populates="message", cascade="all, delete-orphan", order_by="Citation.ordinal"
+    )
+
+
+class Citation(Base):
+    """A passage of the document that an assistant message was grounded in."""
+
+    __tablename__ = "citations"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: uuid.uuid4().hex[:16]
+    )
+    message_id: Mapped[str] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"))
+    ordinal: Mapped[int] = mapped_column(Integer)  # 1-based order within the message
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    start_char: Mapped[int] = mapped_column(Integer)  # offsets into Document.extracted_text
+    end_char: Mapped[int] = mapped_column(Integer)  # exclusive
+    cited_text: Mapped[str] = mapped_column(Text)
+
+    message: Mapped[Message] = relationship(back_populates="citations")
 
 
 class Document(Base):

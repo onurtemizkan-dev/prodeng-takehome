@@ -6,6 +6,15 @@ export interface Conversation {
 	has_document: boolean;
 }
 
+export interface Citation {
+	id: string;
+	ordinal: number;
+	page_number: number | null;
+	start_char: number;
+	end_char: number;
+	cited_text: string;
+}
+
 export interface Message {
 	id: string;
 	conversation_id: string;
@@ -13,6 +22,7 @@ export interface Message {
 	content: string;
 	sources_cited: number;
 	created_at: string;
+	citations: Citation[];
 }
 
 export interface Document {
