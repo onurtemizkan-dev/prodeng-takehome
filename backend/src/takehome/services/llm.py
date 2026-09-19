@@ -1,25 +1,33 @@
 from __future__ import annotations
 
-import re
 from collections.abc import AsyncIterator
 
+import structlog
+from anthropic import AsyncAnthropic
+from anthropic.types import DocumentBlockParam, MessageParam
 from pydantic_ai import Agent
 
-from takehome.config import settings  # noqa: F401 — triggers ANTHROPIC_API_KEY export
+from takehome.config import settings
+from takehome.db.models import Citation
+from takehome.services.citations import page_boundaries, page_for_offset, split_blocks
 
-agent = Agent(
-    "anthropic:claude-haiku-4-5-20251001",
-    system_prompt=(
-        "You are a helpful legal document assistant for commercial real estate lawyers. "
-        "You help lawyers review and understand documents during due diligence.\n\n"
-        "IMPORTANT INSTRUCTIONS:\n"
-        "- Answer questions based on the document content provided.\n"
-        "- When referencing specific parts of the document, cite the relevant section or clause.\n"
-        "- If the answer is not in the document, say so clearly. Do not fabricate information.\n"
-        "- Be concise and precise. Lawyers value accuracy over verbosity.\n"
-        "- When you reference specific content, mention the section, clause, or page."
-    ),
+logger = structlog.get_logger()
+
+system_prompt = (
+    "You are a helpful legal document assistant for commercial real estate lawyers. "
+    "You help lawyers review and understand documents during due diligence.\n\n"
+    "IMPORTANT INSTRUCTIONS:\n"
+    "- Answer questions based on the document content provided.\n"
+    "- Cite the passages of the document you rely on, so the reader can check them.\n"
+    "- When referencing specific parts of the document, cite the relevant section or clause.\n"
+    "- If the answer is not in the document, say so clearly. Do not fabricate information.\n"
+    "- Be concise and precise. Lawyers value accuracy over verbosity.\n"
+    "- When you reference specific content, mention the section, clause, or page."
 )
+
+agent = Agent(f"anthropic:{settings.llm_model}", system_prompt=system_prompt)
+
+client = AsyncAnthropic()
 
 
 async def generate_title(user_message: str) -> str:
@@ -39,60 +47,87 @@ async def chat_with_document(
     user_message: str,
     document_text: str | None,
     conversation_history: list[dict[str, str]],
-) -> AsyncIterator[str]:
-    """Stream a response to the user's message, yielding text chunks.
+) -> AsyncIterator[str | list[Citation]]:
+    """Stream a response to the user's message, yielding text chunks and then its citations.
 
-    Builds a prompt that includes document context and conversation history,
-    then streams the response from the LLM.
+    The document is sent as a document block with citations enabled, so the passages the
+    answer is based on come back as ranges of its blocks, resolved to offsets and pages here.
     """
-    # Build the full prompt with context
-    prompt_parts: list[str] = []
-
     # Add document context if available
+    system = system_prompt
+    blocks = split_blocks(document_text or "")
+    document: DocumentBlockParam | None = None
     if document_text:
-        prompt_parts.append(
-            "The following is the content of the document being discussed:\n\n"
-            "<document>\n"
-            f"{document_text}\n"
-            "</document>\n"
-        )
+        document = {
+            "type": "document",
+            "source": {
+                "type": "content",
+                "content": [{"type": "text", "text": text} for _, text in blocks],
+            },
+            "citations": {"enabled": True},
+            "cache_control": {"type": "ephemeral"},
+        }
     else:
-        prompt_parts.append(
-            "No document has been uploaded yet. If the user asks about a document, "
-            "let them know they need to upload one first.\n"
+        system += (
+            "\n\nNo document has been uploaded yet. If the user asks about a document, "
+            "let them know they need to upload one first."
         )
 
     # Add conversation history
-    if conversation_history:
-        prompt_parts.append("Previous conversation:\n")
-        for msg in conversation_history:
-            role = msg["role"]
-            content = msg["content"]
-            if role == "user":
-                prompt_parts.append(f"User: {content}\n")
-            elif role == "assistant":
-                prompt_parts.append(f"Assistant: {content}\n")
-        prompt_parts.append("\n")
+    messages: list[MessageParam] = []
+    for msg in conversation_history:
+        role = msg["role"]
+        content = msg["content"]
+        if role == "user":
+            messages.append({"role": "user", "content": content})
+        elif role == "assistant":
+            messages.append({"role": "assistant", "content": content})
 
     # Add the current user message
-    prompt_parts.append(f"User: {user_message}")
+    messages.append({"role": "user", "content": user_message})
 
-    full_prompt = "\n".join(prompt_parts)
+    # Put the document on the first user turn, so the cached prefix is the same on every turn
+    if document is not None:
+        first = conversation_history[0]["content"] if conversation_history else user_message
+        messages[0] = {"role": "user", "content": [document, {"type": "text", "text": first}]}
 
-    async with agent.run_stream(full_prompt) as result:
-        async for text in result.stream_text(delta=True):
+    async with client.messages.stream(
+        model=settings.llm_model, max_tokens=4096, system=system, messages=messages
+    ) as result:
+        async for text in result.text_stream:
             yield text
+        final = await result.get_final_message()
 
+    # Resolve the cited blocks to character ranges and pages, skipping repeats
+    boundaries = page_boundaries(document_text or "")
+    citations: list[Citation] = []
+    seen: set[tuple[int, int]] = set()
+    for part in final.content:
+        if part.type != "text":
+            continue
+        for c in part.citations or []:
+            if c.type != "content_block_location":
+                continue
+            span = (c.start_block_index, c.end_block_index)
+            if span in seen:
+                continue
+            seen.add(span)
+            start = blocks[c.start_block_index][0]
+            last_offset, last_text = blocks[c.end_block_index - 1]
+            citations.append(
+                Citation(
+                    ordinal=len(citations) + 1,
+                    page_number=page_for_offset(boundaries, start),
+                    start_char=start,
+                    end_char=last_offset + len(last_text),
+                    cited_text=c.cited_text,
+                )
+            )
 
-def count_sources_cited(response: str) -> int:
-    """Count the number of references to document sections, clauses, pages, etc."""
-    patterns = [
-        r"section\s+\d+",
-        r"clause\s+\d+",
-        r"page\s+\d+",
-        r"paragraph\s+\d+",
-    ]
-    count = 0
-    for pattern in patterns:
-        count += len(re.findall(pattern, response, re.IGNORECASE))
-    return count
+    logger.info(
+        "Grounded answer",
+        citations=len(citations),
+        cache_creation_input_tokens=final.usage.cache_creation_input_tokens,
+        cache_read_input_tokens=final.usage.cache_read_input_tokens,
+    )
+    yield citations

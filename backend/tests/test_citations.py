@@ -1,4 +1,4 @@
-from takehome.services.citations import page_boundaries, page_for_offset
+from takehome.services.citations import page_boundaries, page_for_offset, split_blocks
 
 
 def _doc(*pages: tuple[int, str]) -> str:
@@ -34,3 +34,19 @@ def test_skipped_blank_pages_keep_real_numbers() -> None:
 
 def test_no_markers_resolves_to_none() -> None:
     assert page_for_offset(page_boundaries("just text"), 4) is None
+
+
+def test_split_blocks_keeps_wrapped_lines_with_their_clause() -> None:
+    text = "--- Page 1 ---\n1.1 The Tenant shall keep the Premises in good\nrepair.\n1.2 Next clause.\n"
+    assert [t for _, t in split_blocks(text)] == [
+        "--- Page 1 ---\n",
+        "1.1 The Tenant shall keep the Premises in good\nrepair.\n",
+        "1.2 Next clause.\n",
+    ]
+
+
+def test_split_blocks_offsets_index_into_the_text() -> None:
+    text = _doc((1, 'Section 1 — Definitions\n"the Term" means fifteen years;\n(a) a sub-clause'), (2, "2.1 Demise"))
+    blocks = split_blocks(text)
+    assert "".join(t for _, t in blocks) == text
+    assert all(text[o : o + len(t)] == t for o, t in blocks)

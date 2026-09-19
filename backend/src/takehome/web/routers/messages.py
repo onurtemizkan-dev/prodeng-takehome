@@ -16,7 +16,7 @@ from takehome.db.models import Citation, Message
 from takehome.db.session import get_session
 from takehome.services.conversation import get_conversation, update_conversation
 from takehome.services.document import get_document_for_conversation
-from takehome.services.llm import chat_with_document, count_sources_cited, generate_title
+from takehome.services.llm import chat_with_document, generate_title
 
 logger = structlog.get_logger()
 
@@ -147,6 +147,7 @@ async def send_message(
     async def event_stream() -> AsyncIterator[str]:
         """Generate SSE events with the streamed LLM response."""
         full_response = ""
+        citations: list[Citation] = []
 
         try:
             async for chunk in chat_with_document(
@@ -154,6 +155,9 @@ async def send_message(
                 document_text=document_text,
                 conversation_history=conversation_history,
             ):
+                if not isinstance(chunk, str):
+                    citations = chunk
+                    continue
                 full_response += chunk
                 event_data = json.dumps({"type": "content", "content": chunk})
                 yield f"data: {event_data}\n\n"
@@ -168,9 +172,6 @@ async def send_message(
             event_data = json.dumps({"type": "content", "content": error_msg})
             yield f"data: {event_data}\n\n"
 
-        # Count sources cited in the full response
-        sources = count_sources_cited(full_response)
-
         # Save the assistant message to the database.
         # We need a fresh session since the outer one may have been closed.
         from takehome.db.session import async_session as session_factory
@@ -180,11 +181,13 @@ async def send_message(
                 conversation_id=conversation_id,
                 role="assistant",
                 content=full_response,
-                sources_cited=sources,
+                sources_cited=len(citations),
+                citations=citations,
             )
             save_session.add(assistant_message)
             await save_session.commit()
-            await save_session.refresh(assistant_message)
+            # Only created_at needs refreshing; a full refresh would expire the citations too
+            await save_session.refresh(assistant_message, attribute_names=["created_at"])
 
             # Auto-generate title from first user message
             if is_first_message:
@@ -206,7 +209,7 @@ async def send_message(
             message_data = json.dumps(
                 {
                     "type": "message",
-                    "message": _message_out(assistant_message, []).model_dump(mode="json"),
+                    "message": _message_out(assistant_message, citations).model_dump(mode="json"),
                 }
             )
             yield f"data: {message_data}\n\n"
@@ -215,7 +218,7 @@ async def send_message(
             done_data = json.dumps(
                 {
                     "type": "done",
-                    "sources_cited": sources,
+                    "sources_cited": len(citations),
                     "message_id": assistant_message.id,
                 }
             )
