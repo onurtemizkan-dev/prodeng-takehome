@@ -6,7 +6,8 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function relativeTime(dateString: string): string {
-	const date = new Date(dateString);
+	// The API sends UTC timestamps without an offset, so mark them as UTC before comparing to now
+	const date = new Date(`${dateString}Z`);
 	const now = new Date();
 	const diffMs = now.getTime() - date.getTime();
 	const diffSec = Math.floor(diffMs / 1000);
