@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from typing import cast
 
 import fitz  # PyMuPDF
 import structlog
@@ -13,6 +14,23 @@ from takehome.config import settings
 from takehome.db.models import Document
 
 logger = structlog.get_logger()
+
+# PyMuPDF ships no annotations; a layout block is (x0, y0, x1, y1, text, block_no, block_type)
+Block = tuple[float, float, float, float, str, int, int]
+
+# Words hyphenated across a line break are joined back up
+_TEXT_FLAGS = cast(
+    int, fitz.TEXTFLAGS_BLOCKS | fitz.TEXT_DEHYPHENATE  # pyright: ignore[reportUnknownMemberType]
+)
+
+
+def page_lines(page: fitz.Page) -> list[str]:
+    """One line per layout block of the page, in reading order, with wrapped lines joined."""
+    blocks = cast(
+        list[Block],
+        page.get_text("blocks", sort=True, flags=_TEXT_FLAGS),  # pyright: ignore[reportUnknownMemberType]
+    )
+    return [" ".join(block[4].split()) for block in blocks]
 
 
 async def upload_document(
@@ -68,7 +86,7 @@ async def upload_document(
         pages: list[str] = []
         for page_num in range(page_count):
             page = doc[page_num]
-            text = page.get_text()  # type: ignore[union-attr]
+            text = "\n".join(page_lines(page))
             if text.strip():
                 pages.append(f"--- Page {page_num + 1} ---\n{text}")
         extracted_text = "\n\n".join(pages)

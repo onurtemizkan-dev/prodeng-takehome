@@ -6,27 +6,13 @@ from bisect import bisect_right
 # upload_document() prefixes every non-empty page with this line, using the real PDF page number.
 _PAGE_MARKER = re.compile(r"^--- Page (\d+) ---$", re.MULTILINE)
 
-# A block starts at a page marker, a heading, or a clause or list marker; wrapped lines continue it
-_BLOCK_START = re.compile(
-    r"--- Page \d+ ---$"
-    r"|Section \d+\b"
-    r"|\d+(?:\.\d+)+\s"  # 1.1, 8.3.1
-    r"|\d+\.\s"  # 1.
-    r"|\([a-z0-9]+\)\s"  # (a), (iv)
-    r"|•"
-    r"|\"[^\"\n]+\" means\b"
-)
-
 
 def split_blocks(text: str) -> list[tuple[int, str]]:
-    """Split extracted text into clause-sized (offset, text) blocks that concatenate back to it."""
+    """Split extracted text into its (offset, line) blocks, leaving out page markers and blank lines."""
     blocks: list[tuple[int, str]] = []
     offset = 0
     for line in text.splitlines(keepends=True):
-        if blocks and not _BLOCK_START.match(line):
-            start, current = blocks[-1]
-            blocks[-1] = (start, current + line)
-        else:
+        if line.strip() and not _PAGE_MARKER.match(line):
             blocks.append((offset, line))
         offset += len(line)
     return blocks
