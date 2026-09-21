@@ -50,6 +50,8 @@ We've included sample legal documents in `sample-docs/` for testing.
 
 ### Try it
 
+Walkthrough: https://www.loom.com/share/52a24748ade64830ab8df87420c86267
+
 1. Create a chat and upload `sample-docs/commercial-lease-100-bishopsgate.pdf`.
 2. Ask: "What conditions must the tenant satisfy to exercise the break?"
 3. Click the first chip under the answer. The viewer jumps to page 7 and highlights the clause it cites. Hover the chip for the full passage.
